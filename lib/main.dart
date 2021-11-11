@@ -70,6 +70,7 @@ class _RandomWordsState extends State<RandomWords> {
   MyUser? myUser;
   bool _firstLoad = true;
   SnappingSheetController snapController = SnappingSheetController();
+  double blur_factor = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -93,10 +94,20 @@ class _RandomWordsState extends State<RandomWords> {
   }
 
   Widget _buildSnappingSheet(AuthRepository auth) {
+    log("updating snap", name: "Snap");
     if (auth.user != null) {
       return SnappingSheet(
         controller: snapController,
-        child: _buildSuggestions(auth),
+        child: Stack(
+          children: [
+            _buildSuggestions(auth),
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20 * blur_factor, sigmaY: 20 * blur_factor), // TODO: Add blur
+              child: Container(),
+              //child: snap,
+            ),
+          ],
+        ),
         lockOverflowDrag: true,
         snappingPositions: const [
           SnappingPosition.factor(
@@ -131,21 +142,25 @@ class _RandomWordsState extends State<RandomWords> {
           draggable: true,
           child: _buildProfileSection(auth),
         ),
+        onSheetMoved: (snappingPosition) {
+          setState(() {
+            double body_height = MediaQuery.of(context).size.height;
+            blur_factor = snapController.currentPosition / body_height;
+            if (blur_factor < 0.1) blur_factor = 0; // avoid blurring in basic case
+          });
+        },
       );
-
-      /*double body_height = MediaQuery.of(context).size.height;
-      //double k = snapController.currentPosition / body_height;
 
       return Stack(
         children: [
           _buildSuggestions(auth),
           BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 0.0, sigmaY: 0.0), // TODO: Add blur
-            child: Container(color: Colors.transparent),
-            snap
+            filter: ImageFilter.blur(sigmaX: 5 * blur_factor, sigmaY: 5 * blur_factor), // TODO: Add blur
+            child: Container(color: Colors.red.withOpacity(0.2)),
+            //child: snap,
           ),
         ],
-      );*/
+      );
     } else {
       return _buildSuggestions(auth);
     }
