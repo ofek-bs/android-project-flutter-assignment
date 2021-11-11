@@ -70,7 +70,7 @@ class _RandomWordsState extends State<RandomWords> {
   MyUser? myUser;
   bool _firstLoad = true;
   SnappingSheetController snapController = SnappingSheetController();
-  double blur_factor = 0;
+  double blurFactor = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -89,12 +89,11 @@ class _RandomWordsState extends State<RandomWords> {
                     ? (() => _signOut(auth))
                     : _pushLogin)
           ]),
-          body: _buildSnappingSheet(auth));
+          body: _buildMainScreen(auth));
     });
   }
 
-  Widget _buildSnappingSheet(AuthRepository auth) {
-    log("updating snap", name: "Snap");
+  Widget _buildMainScreen(AuthRepository auth) {
     if (auth.user != null) {
       return SnappingSheet(
         controller: snapController,
@@ -102,7 +101,8 @@ class _RandomWordsState extends State<RandomWords> {
           children: [
             _buildSuggestions(auth),
             BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20 * blur_factor, sigmaY: 20 * blur_factor), // TODO: Add blur
+              filter: ImageFilter.blur(
+                  sigmaX: 20 * blurFactor, sigmaY: 20 * blurFactor),
               child: Container(),
               //child: snap,
             ),
@@ -128,12 +128,35 @@ class _RandomWordsState extends State<RandomWords> {
             positionFactor: 0.7,
           ),
         ],
-        grabbing: Container(
-          decoration: const BoxDecoration(
-            color: Color.fromRGBO(199, 199, 199, 1),
-          ),
-          child: Center(
-            child: Text("Welcome back, ${auth.user!.email}"),
+        grabbing: GestureDetector(
+          onTap: () {
+            setState(() {
+              if (snapController.currentSnappingPosition ==
+                  const SnappingPosition.factor(positionFactor: 0)) {
+                snapController.snapToPosition(
+                    const SnappingPosition.factor(positionFactor: 0.2));
+              } else {
+                snapController.snapToPosition(const SnappingPosition.factor(
+                  positionFactor: 0.0,
+                  snappingCurve: Curves.easeOutExpo,
+                  snappingDuration: Duration(seconds: 1),
+                  grabbingContentOffset: GrabbingContentOffset.top,
+                ));
+              }
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.all(15),
+            decoration: const BoxDecoration(
+              color: Color.fromRGBO(199, 199, 199, 1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Welcome back, ${auth.user!.email}"),
+                const Icon(Icons.keyboard_arrow_up_rounded)
+              ],
+            ),
           ),
         ),
         grabbingHeight: 50,
@@ -144,22 +167,13 @@ class _RandomWordsState extends State<RandomWords> {
         ),
         onSheetMoved: (snappingPosition) {
           setState(() {
-            double body_height = MediaQuery.of(context).size.height;
-            blur_factor = snapController.currentPosition / body_height;
-            if (blur_factor < 0.1) blur_factor = 0; // avoid blurring in basic case
+            double bodyHeight = MediaQuery.of(context).size.height;
+            blurFactor = snapController.currentPosition / bodyHeight;
+            if (blurFactor < 0.1) {
+              blurFactor = 0;
+            } // avoid blurring in basic case
           });
         },
-      );
-
-      return Stack(
-        children: [
-          _buildSuggestions(auth),
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 5 * blur_factor, sigmaY: 5 * blur_factor), // TODO: Add blur
-            child: Container(color: Colors.red.withOpacity(0.2)),
-            //child: snap,
-          ),
-        ],
       );
     } else {
       return _buildSuggestions(auth);
@@ -171,12 +185,15 @@ class _RandomWordsState extends State<RandomWords> {
       color: const Color.fromRGBO(245, 245, 245, 1),
       child: ListTile(
         contentPadding: const EdgeInsets.all(10),
-        title: Text('${auth.user!.email}'),
-        leading: CircleAvatar(radius: 30),
+        title: Text(
+          '${auth.user!.email}',
+          style: const TextStyle(fontSize: 20),
+        ),
+        leading: const CircleAvatar(radius: 30),
         subtitle: ElevatedButton(
           style: ElevatedButton.styleFrom(
               primary: const Color.fromRGBO(0, 138, 166, 1)),
-          onPressed: () {}, // TODO
+          onPressed: () {}, // TODO: avatar changing
           child: const Text('Change avatar'),
         ),
       ),
@@ -208,10 +225,10 @@ class _RandomWordsState extends State<RandomWords> {
   void _loadUserSaved(AuthRepository auth) async {
     if (auth.user != null) {
       String mail = auth.user!.email ?? ""; // won't be null
-      var tmp_list = await repository.getUserList(mail);
+      var tmpList = await repository.getUserList(mail);
 
       setState(() {
-        _saved = tmp_list!.toSet();
+        _saved = tmpList!.toSet();
         myUser = MyUser(mail, _saved.toList());
         log("loaded connected user: ${myUser!.email} with favorites: ${_saved.toString()}");
       });
@@ -344,12 +361,31 @@ class _RandomWordsState extends State<RandomWords> {
                                       horizontal: 80),
                                   shape: const RoundedRectangleBorder(
                                       borderRadius: BorderRadius.all(
-                                          Radius.circular(5)))),
+                                          Radius.circular(15))),
+                                  minimumSize: const Size(double.infinity, 40)),
                               onPressed: (auth.status == Status.Logging)
                                   ? null
                                   : (() => _signIn(auth, emailController,
                                       passwordController)),
-                              child: const Text("Login"),
+                              child: const Text("Log in"),
+                            )),
+                    const SizedBox(height: 10),
+                    Consumer<AuthRepository>(
+                        builder: (context, auth, _) => TextButton(
+                              style: TextButton.styleFrom(
+                                  primary: Colors.white,
+                                  backgroundColor: Colors.lightBlue,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20),
+                                  shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.all(
+                                          Radius.circular(15))),
+                                  minimumSize: const Size(double.infinity, 40)),
+                              onPressed: (auth.status == Status.Logging)
+                                  ? null
+                                  : (() => _signUp(auth, emailController,
+                                      passwordController)),
+                              child: const Text("New user? Click to sign up"),
                             )),
                   ],
                 ),
@@ -359,17 +395,81 @@ class _RandomWordsState extends State<RandomWords> {
     );
   }
 
+  void _signUp(AuthRepository auth, TextEditingController emailController,
+      TextEditingController passwordController) async {
+    //await auth.signUp(emailController.text, passwordController.text);
+    final TextEditingController confirmedPasswordController =
+        TextEditingController();
+
+    showModalBottomSheet(
+        context: context,
+        builder: (context) {
+          return Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Center(
+                      child: Text(
+                    "Please confirm your password below:",
+                    style: TextStyle(fontSize: 15),
+                  )),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: confirmedPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Center(
+                      child: TextButton(
+                    style: TextButton.styleFrom(
+                        primary: Colors.white,
+                        backgroundColor: Colors.lightBlue,
+                        padding: const EdgeInsets.symmetric(horizontal: 80),
+                        shape: const RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.all(Radius.circular(5)))),
+                    onPressed: (auth.status == Status.Logging)
+                        ? null
+                        : (() {
+                            if (passwordController.text !=
+                                confirmedPasswordController.text) {
+                              _showSnackbar("Passwords must match");
+                              Navigator.pop(context);
+                            } else {
+                              auth.signUp(emailController.text,
+                                  passwordController.text);
+                              Navigator.pop(context);
+                              setState(() {
+                                myUser = MyUser(
+                                    emailController.text, _saved.toList());
+                                repository.updateUser(myUser!);
+                              });
+                              Navigator.pop(context);
+                            }
+                          }),
+                    child: const Text("Confirm"),
+                  )),
+                  Padding(padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom))
+                ],
+              ));
+        });
+  }
+
   void _signIn(AuthRepository auth, TextEditingController emailController,
       TextEditingController passwordController) async {
     bool connected =
         await auth.signIn(emailController.text, passwordController.text);
     if (connected) {
-      List<WordPair>? user_list =
+      List<WordPair>? userList =
           await repository.getUserList(emailController.text);
-      Set<WordPair>? new_set = _mergeSets(user_list!.toSet(), _saved);
+      Set<WordPair>? newSet = _mergeSets(userList!.toSet(), _saved);
 
       setState(() {
-        _saved = new_set!;
+        _saved = newSet!;
         myUser = MyUser(emailController.text, _saved.toList());
         repository.updateUser(myUser!);
       });
