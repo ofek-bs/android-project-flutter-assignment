@@ -1,4 +1,6 @@
-//import 'dart:ui';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 
 import 'dart:developer';
 import 'dart:ui';
@@ -6,6 +8,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:english_words/english_words.dart'; // Add this line.
 import 'package:firebase_core/firebase_core.dart';
+import 'package:hello_me/cloud_repo.dart';
 import 'package:hello_me/store_repo.dart';
 import 'package:provider/provider.dart';
 import 'package:hello_me/auth_repo.dart';
@@ -66,8 +69,10 @@ class _RandomWordsState extends State<RandomWords> {
   final _suggestions = <WordPair>[];
   var _saved = <WordPair>{};
   final _biggerFont = const TextStyle(fontSize: 18);
-  final StoreRepository repository = StoreRepository();
+  final StoreRepository firestore = StoreRepository();
+  final CloudRepository cloud = CloudRepository();
   MyUser? myUser;
+  String? profileUrl;
   bool _firstLoad = true;
   SnappingSheetController snapController = SnappingSheetController();
   double blurFactor = 0;
@@ -95,6 +100,11 @@ class _RandomWordsState extends State<RandomWords> {
 
   Widget _buildMainScreen(AuthRepository auth) {
     if (auth.user != null) {
+      if (_firstLoad) {
+        _loadUserSaved(auth);
+        _firstLoad = false;
+      }
+
       return SnappingSheet(
         controller: snapController,
         child: Stack(
@@ -104,7 +114,6 @@ class _RandomWordsState extends State<RandomWords> {
               filter: ImageFilter.blur(
                   sigmaX: 20 * blurFactor, sigmaY: 20 * blurFactor),
               child: Container(),
-              //child: snap,
             ),
           ],
         ),
@@ -189,11 +198,28 @@ class _RandomWordsState extends State<RandomWords> {
           '${auth.user!.email}',
           style: const TextStyle(fontSize: 20),
         ),
-        leading: const CircleAvatar(radius: 30),
+        leading: CircleAvatar(
+            backgroundColor: Colors.grey,
+            backgroundImage:
+                (profileUrl == null) ? null : NetworkImage(profileUrl!),
+            radius: 30),
         subtitle: ElevatedButton(
           style: ElevatedButton.styleFrom(
               primary: const Color.fromRGBO(0, 138, 166, 1)),
-          onPressed: () {}, // TODO: avatar changing
+          onPressed: () async {
+            FilePickerResult? result =
+                await FilePicker.platform.pickFiles(type: FileType.image);
+
+            if (result != null) {
+              File file = File(result.files.single.path!);
+              String url = await cloud.uploadNewImage(file, auth.user!.email!);
+              setState(() {
+                profileUrl = url;
+              });
+            } else {
+              _showSnackbar("No image selected");
+            }
+          },
           child: const Text('Change avatar'),
         ),
       ),
@@ -201,11 +227,6 @@ class _RandomWordsState extends State<RandomWords> {
   }
 
   Widget _buildSuggestions(AuthRepository auth) {
-    if (_firstLoad) {
-      _loadUserSaved(auth);
-      _firstLoad = false;
-    }
-
     return ListView.builder(
         padding: const EdgeInsets.all(16),
         itemBuilder: (BuildContext _context, int i) {
@@ -225,9 +246,16 @@ class _RandomWordsState extends State<RandomWords> {
   void _loadUserSaved(AuthRepository auth) async {
     if (auth.user != null) {
       String mail = auth.user!.email ?? ""; // won't be null
-      var tmpList = await repository.getUserList(mail);
+      var tmpList = await firestore.getUserList(mail);
+      var profileImage = "";
+      try {
+        profileImage = await cloud.getImageUrl(mail);
+      } catch (e) {
+        profileImage = await cloud.getDefaultImageUrl();
+      }
 
       setState(() {
+        profileUrl = profileImage;
         _saved = tmpList!.toSet();
         myUser = MyUser(mail, _saved.toList());
         log("loaded connected user: ${myUser!.email} with favorites: ${_saved.toString()}");
@@ -253,13 +281,13 @@ class _RandomWordsState extends State<RandomWords> {
             _saved.remove(pair);
             if (myUser != null) {
               myUser!.favorites = _saved.toList();
-              repository.updateUser(myUser!);
+              firestore.updateUser(myUser!);
             }
           } else {
             _saved.add(pair);
             if (myUser != null) {
               myUser!.favorites = _saved.toList();
-              repository.updateUser(myUser!);
+              firestore.updateUser(myUser!);
             }
           }
         });
@@ -397,7 +425,6 @@ class _RandomWordsState extends State<RandomWords> {
 
   void _signUp(AuthRepository auth, TextEditingController emailController,
       TextEditingController passwordController) async {
-    //await auth.signUp(emailController.text, passwordController.text);
     final TextEditingController confirmedPasswordController =
         TextEditingController();
 
@@ -434,26 +461,31 @@ class _RandomWordsState extends State<RandomWords> {
                                 BorderRadius.all(Radius.circular(5)))),
                     onPressed: (auth.status == Status.Logging)
                         ? null
-                        : (() {
+                        : (() async {
                             if (passwordController.text !=
                                 confirmedPasswordController.text) {
                               _showSnackbar("Passwords must match");
                               Navigator.pop(context);
                             } else {
-                              auth.signUp(emailController.text,
+                              await auth.signUp(emailController.text,
                                   passwordController.text);
+                              var profile =
+                                  await cloud.getDefaultImageUrl(); // new user
                               Navigator.pop(context);
                               setState(() {
+                                profileUrl = profile;
                                 myUser = MyUser(
                                     emailController.text, _saved.toList());
-                                repository.updateUser(myUser!);
+                                firestore.updateUser(myUser!);
                               });
                               Navigator.pop(context);
                             }
                           }),
                     child: const Text("Confirm"),
                   )),
-                  Padding(padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom))
+                  Padding(
+                      padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).viewInsets.bottom))
                 ],
               ));
         });
@@ -465,13 +497,20 @@ class _RandomWordsState extends State<RandomWords> {
         await auth.signIn(emailController.text, passwordController.text);
     if (connected) {
       List<WordPair>? userList =
-          await repository.getUserList(emailController.text);
+          await firestore.getUserList(emailController.text);
       Set<WordPair>? newSet = _mergeSets(userList!.toSet(), _saved);
+      var profileImage = "";
+      try {
+        profileImage = await cloud.getImageUrl(emailController.text);
+      } catch (e) {
+        profileImage = await cloud.getDefaultImageUrl();
+      }
 
       setState(() {
+        profileUrl = profileImage;
         _saved = newSet!;
         myUser = MyUser(emailController.text, _saved.toList());
-        repository.updateUser(myUser!);
+        firestore.updateUser(myUser!);
       });
 
       Navigator.pop(context);
@@ -484,6 +523,7 @@ class _RandomWordsState extends State<RandomWords> {
   void _signOut(AuthRepository auth) async {
     await auth.signOut();
     setState(() {
+      profileUrl = null;
       myUser = null;
       _saved = {};
     });
@@ -509,7 +549,7 @@ class _RandomWordsState extends State<RandomWords> {
                               _saved.remove(pair);
                               if (myUser != null) {
                                 myUser!.favorites = _saved.toList();
-                                repository.updateUser(myUser!);
+                                firestore.updateUser(myUser!);
                               }
                             });
                             Navigator.of(context).pop(true);
