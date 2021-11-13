@@ -433,7 +433,8 @@ class _RandomWordsState extends State<RandomWords> {
         builder: (context) {
           return Container(
               padding: const EdgeInsets.all(20),
-              child: Column(
+              child: SingleChildScrollView(
+                  child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Center(
@@ -487,7 +488,7 @@ class _RandomWordsState extends State<RandomWords> {
                       padding: EdgeInsets.only(
                           bottom: MediaQuery.of(context).viewInsets.bottom))
                 ],
-              ));
+              )));
         });
   }
 
